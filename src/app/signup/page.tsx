@@ -38,7 +38,7 @@ export default function SignupPage() {
             setError(error.message)
             setLoading(false)
         } else {
-            router.push('/events')
+            router.push('/verify')
         }
     }
 

@@ -34,7 +34,9 @@ export async function middleware(request) {
     // if user is not signed in and trying to access protected routes, redirect
     // to login
     if (!user && !request.nextUrl.pathname.startsWith('/login') &&
-        !request.nextUrl.pathname.startsWith('/signup')) {
+        !request.nextUrl.pathname.startsWith('/signup') &&
+        !request.nextUrl.pathname.startsWith('/verify') &&
+        !request.nextUrl.pathname.startsWith('/auth/callback')) {
         const url = request.nextUrl.clone()
         url.pathname = '/login'
         return NextResponse.redirect(url)
