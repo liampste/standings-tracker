@@ -104,6 +104,17 @@ export default function NewStagePage() {
         if (currentStep === 3 && form.format === 'round_robin') {
             return form.rounds >= minRounds()
         }
+        if (currentStep === 4 && form.seeded) {
+            const assignedSeeds = Object.values(form.seeds)
+            const n = form.selectedParticipants.length
+            // Every participant has a seed
+            const allAssigned = form.selectedParticipants.every(id => form.seeds[id] > 0)
+            // No duplicate seeds
+            const noDuplicates = new Set(assignedSeeds).size === assignedSeeds.length
+            // Seeds are 1 through N
+            const validRange = assignedSeeds.every(s => s >= 1 && s <= n)
+            return allAssigned && noDuplicates && validRange
+        }
         return true
     }
 
@@ -459,29 +470,59 @@ export default function NewStagePage() {
 
                             {form.seeded && (
                                 <div className="grid gap-2">
+                                    <p className="text-sm text-gray-500">
+                                        Assign seeds 1 through {form.selectedParticipants.length} to all participants
+                                    </p>
                                     {form.selectedParticipants.map((id) => {
                                         const participant = participants.find(p => p.id === id)
+                                        const currentSeed = form.seeds[id]
+                                        const isDuplicate = currentSeed > 0 && 
+                                            Object.entries(form.seeds).some(
+                                                ([otherId, otherSeed]) => otherId !== id && otherSeed === currentSeed
+                                            )
+                                        const isOutOfRange = currentSeed > form.selectedParticipants.length || currentSeed < 1
+
                                         return (
-                                            <div key={id} className="flex items-center gap-3 p-3 border border-gray-200 rounded-md">
+                                            <div key={id} className={`flex items-center gap-3 p-3 border rounded-md ${
+                                                isDuplicate || isOutOfRange ? 'border-red-400 bg-red-50' : 'border-gray-200'
+                                            }`}>
                                                 <span className="flex-1 text-sm font-medium text-gray-900">
                                                     {participant?.name}
                                                 </span>
-                                                <input
-                                                    type="number"
-                                                    min={1}
-                                                    value={form.seeds[id] || ''}
-                                                    onChange={(e) => updateForm({
-                                                        seeds: {
-                                                            ...form.seeds,
-                                                            [id]: parseInt(e.target.value) || 0
-                                                        }
-                                                    })}
-                                                    placeholder="Seed #"
-                                                    className="w-20 border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                />
+                                                <div className="flex items-center gap-2">
+                                                    {isDuplicate && (
+                                                        <span className="text-xs text-red-500">Duplicate</span>
+                                                    )}
+                                                    {isOutOfRange && currentSeed > 0 && (
+                                                        <span className="text-xs text-red-500">Out of range</span>
+                                                    )}
+                                                    <input
+                                                        type="number"
+                                                        min={1}
+                                                        max={form.selectedParticipants.length}
+                                                        value={form.seeds[id] || ''}
+                                                        onChange={(e) => updateForm({
+                                                            seeds: {
+                                                                ...form.seeds,
+                                                                [id]: parseInt(e.target.value) || 0
+                                                            }
+                                                        })}
+                                                        placeholder="Seed #"
+                                                        className={`w-20 border rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                                            isDuplicate || isOutOfRange ? 'border-red-400' : 'border-gray-300'
+                                                        }`}
+                                                    />
+                                                </div>
                                             </div>
                                         )
                                     })}
+
+                                    {/* Summary validation message */}
+                                    {form.selectedParticipants.some(id => !form.seeds[id]) && (
+                                        <p className="text-red-500 text-xs mt-1">
+                                            All participants must be assigned a seed
+                                        </p>
+                                    )}
                                 </div>
                             )}
                         </div>
