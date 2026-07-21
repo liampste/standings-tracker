@@ -201,10 +201,11 @@ export default function NewStagePage() {
             return
         }
 
-        // 2. Insert stage participants
-        const stageParticipants = form.selectedParticipants.map((participantId, index) => ({
+        // 2. Insert stage participants with seeds
+        const stageParticipants = form.selectedParticipants.map((participantId) => ({
             stage_id: stage.id,
             participant_id: participantId,
+            seed: form.seeded ? (form.seeds[participantId] || null) : null,
         }))
 
         const { error: participantsError } = await supabase
@@ -232,17 +233,6 @@ export default function NewStagePage() {
             setError(matchesError.message)
             setSubmitting(false)
             return
-        }
-
-        // 4. If seeded, update participant seeds
-        if (form.seeded) {
-            const seedUpdates = Object.entries(form.seeds).map(([participantId, seed]) =>
-                supabase
-                    .from('event_participants')
-                    .update({ seed })
-                    .eq('id', participantId)
-            )
-            await Promise.all(seedUpdates)
         }
 
         router.push(`/events/${eventId}/stages/${stage.id}`)

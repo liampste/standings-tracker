@@ -114,12 +114,15 @@ export default function StagePage() {
     const fetchParticipants = async () => {
         const { data, error } = await supabase
             .from('stage_participants')
-            .select('participant_id, event_participants(id, name, seed)')
+            .select('seed, event_participants(id, name)')
             .eq('stage_id', stageId)
         if (error) {
             setError(error.message)
         } else {
-            const mapped = data.map((row: any) => row.event_participants)
+            const mapped = data.map((row: any) => ({
+                ...row.event_participants,
+                seed: row.seed
+            }))
             setParticipants(mapped)
         }
     }
