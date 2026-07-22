@@ -172,6 +172,135 @@ export default function NewStagePage() {
         return matches
     }
 
+    const generateSingleElim = async (stageId: string) => {
+        const participantIds = form.selectedParticipants
+        const nextPowerOf2 = Math.pow(2, Math.ceil(Math.log2(participantIds.length)))
+        const numRounds = Math.log2(nextPowerOf2)
+        const numByes = nextPowerOf2 - participantIds.length
+
+        // Sort by seed or randomize
+        let sorted = [...participantIds]
+        if (form.seeded) {
+            sorted.sort((a, b) => (form.seeds[a] || 999) - (form.seeds[b] || 999))
+        } else {
+            sorted.sort(() => Math.random() - 0.5)
+        }
+
+        // Add byes at the end so top seeds get them
+        const withByes = [...sorted, ...Array(numByes).fill(null)]
+
+        // Step 1: Insert ALL placeholder matches for all rounds
+        const allMatchInserts = []
+        for (let round = 1; round <= numRounds; round++) {
+            const matchCount = nextPowerOf2 / Math.pow(2, round)
+            for (let i = 0; i < matchCount; i++) {
+                allMatchInserts.push({
+                    stage_id: stageId,
+                    round,
+                    participant_a_id: null,
+                    participant_b_id: null,
+                    score_a: 0,
+                    score_b: 0,
+                    status: 'pending'
+                })
+            }
+        }
+
+        const { data: insertedMatches, error: matchError } = await supabase
+            .from('matches')
+            .insert(allMatchInserts)
+            .select()
+
+        if (matchError || !insertedMatches) return matchError
+
+        // Step 2: Group matches by round
+        const matchesByRound: Record<number, any[]> = {}
+        insertedMatches.forEach(match => {
+            if (!matchesByRound[match.round]) matchesByRound[match.round] = []
+            matchesByRound[match.round].push(match)
+        })
+
+        // Step 3: Link next_match_id — each match feeds into the next round
+        // Match i in round R feeds into match floor(i/2) in round R+1
+        for (let round = 1; round < numRounds; round++) {
+        const currentRoundMatches = matchesByRound[round]
+        const nextRoundMatches = matchesByRound[round + 1]
+
+        await Promise.all(
+            currentRoundMatches.map((match, index) => {
+                const nextMatch = nextRoundMatches[Math.floor(index / 2)]
+                return supabase
+                    .from('matches')
+                    .update({ next_match_id: nextMatch.id })
+                    .eq('id', match.id)
+                    .then()
+            })
+        )
+    }
+
+        // Step 4: Fill Round 1 participants and handle byes
+        const round1Matches = matchesByRound[1]
+
+        await Promise.all(
+            round1Matches.map(async (match, i) => {
+                const participantA = withByes[i * 2]
+                const participantB = withByes[i * 2 + 1]
+
+                if (participantB === null) {
+                    // Participant A gets a bye — auto advance to next round
+                    const nextMatch = matchesByRound[2]?.[Math.floor(i / 2)]
+                    if (nextMatch) {
+                        const isTopSlot = i % 2 === 0
+                        await supabase
+                            .from('matches')
+                            .update({
+                                [isTopSlot ? 'participant_a_id' : 'participant_b_id']: participantA,
+                            })
+                            .eq('id', nextMatch.id)
+                        await supabase
+                            .from('matches')
+                            .update({
+                                participant_a_id: participantA,
+                                participant_b_id: null,
+                                status: 'completed'
+                            })
+                            .eq('id', match.id)
+                    }
+                } else if (participantA === null) {
+                    // Participant B gets a bye — auto advance to next round
+                    const nextMatch = matchesByRound[2]?.[Math.floor(i / 2)]
+                    if (nextMatch) {
+                        const isTopSlot = i % 2 === 0
+                        await supabase
+                            .from('matches')
+                            .update({
+                                [isTopSlot ? 'participant_a_id' : 'participant_b_id']: participantB,
+                            })
+                            .eq('id', nextMatch.id)
+                        await supabase
+                            .from('matches')
+                            .update({
+                                participant_a_id: null,
+                                participant_b_id: participantB,
+                                status: 'completed'
+                            })
+                            .eq('id', match.id)
+                    }
+                } else {
+                    // Normal match — fill both participants
+                    await supabase
+                        .from('matches')
+                        .update({
+                            participant_a_id: participantA,
+                            participant_b_id: participantB
+                        })
+                        .eq('id', match.id)
+                }
+            })
+        )
+        return null
+    }
+
     const handleGenerate = async () => {
         setSubmitting(true)
         setError('')
@@ -218,21 +347,29 @@ export default function NewStagePage() {
             return
         }
 
-        // 3. Generate and insert matches
-        const matches = generateRoundRobinMatches(
-            stage.id,
-            form.selectedParticipants,
-            form.rounds
-        )
+        // 3. Generate matches based on format
+        if (form.format === 'round_robin') {
+            const matches = generateRoundRobinMatches(
+                stage.id,
+                form.selectedParticipants,
+                form.rounds
+            )
+            const { error: matchesError } = await supabase
+                .from('matches')
+                .insert(matches)
 
-        const { error: matchesError } = await supabase
-            .from('matches')
-            .insert(matches)
-
-        if (matchesError) {
-            setError(matchesError.message)
-            setSubmitting(false)
-            return
+            if (matchesError) {
+                setError(matchesError.message)
+                setSubmitting(false)
+                return
+            }
+        } else if (form.format === 'single_elim') {
+            const elimError = await generateSingleElim(stage.id)
+            if (elimError) {
+                setError(elimError.message)
+                setSubmitting(false)
+                return
+            }
         }
 
         router.push(`/events/${eventId}/stages/${stage.id}`)

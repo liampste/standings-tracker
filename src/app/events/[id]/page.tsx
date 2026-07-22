@@ -39,6 +39,7 @@ export default function EventPage() {
     const [newParticipantName, setNewParticipantName] = useState('')
     const [addingParticipant, setAddingParticipant] = useState(false)
     const [showParticipantForm, setShowParticipantForm] = useState(false)
+    const [deletingStageId, setDeletingStageId] = useState<string | null>(null)
     const router = useRouter()
     const params = useParams()
     const eventId = params.id as string
@@ -128,16 +129,15 @@ export default function EventPage() {
     }
 
     const handleDeleteStage = async (id: string) => {
+        setDeletingStageId(id)
         const { error } = await supabase
             .from('stages')
             .delete()
             .eq('id', id)
-        
-        if (error) {
-            setError(error.message)
-        } else {
-            fetchStages()
-        }
+
+        if (error) setError(error.message)
+        else fetchStages()
+        setDeletingStageId(null)
     }
 
     const hasStages = stages.length > 0
@@ -314,29 +314,37 @@ export default function EventPage() {
                             </div>
                         ) : (
                             <div className="grid gap-4">
-                                {stages.map((stage) => (
+                                {stages.map((stageItem) => (
                                     <div
-                                        key={stage.id}
-                                        className="bg-white rounded-lg shadow-sm p-5 flex justify-between items-center hover:shadow-md transition-shadow cursor-pointer"
-                                        onClick={() => router.push(`/events/${eventId}/stages/${stage.id}`)}
+                                        key={stageItem.id}
+                                        className={`bg-white rounded-lg shadow-sm p-5 flex justify-between items-center transition-shadow ${
+                                            deletingStageId === stageItem.id
+                                                ? 'opacity-50 cursor-default'
+                                                : 'hover:shadow-md cursor-pointer'
+                                        }`}
+                                        onClick={() => {
+                                            if (deletingStageId !== stageItem.id) {
+                                                router.push(`/events/${eventId}/stages/${stageItem.id}`)
+                                            }
+                                        }}
                                     >
                                         <div>
                                             <h3 className="font-semibold text-gray-900">
-                                                {stage.name}
+                                                {stageItem.name}
                                             </h3>
                                             <p className="text-sm text-gray-500 mt-1">
-                                                {stage.format === 'round_robin' ? 'Round Robin' :
-                                                 stage.format === 'single_elim' ? 'Single Elimination' :
-                                                 'Double Elimination'}
-                                                {stage.rounds ? ` • ${stage.rounds} rounds` : ''}
+                                                {stageItem.format === 'round_robin' ? 'Round Robin' :
+                                                stageItem.format === 'single_elim' ? 'Single Elimination' :
+                                                'Double Elimination'}
+                                                {stageItem.rounds ? ` • ${stageItem.rounds} rounds` : ''}
                                                 {' • '}
-                                                {stage.generated ? 'Generated' : 'Not generated'}
+                                                {stageItem.generated ? 'Generated' : 'Not generated'}
                                             </p>
                                         </div>
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation()
-                                                handleDeleteStage(stage.id)
+                                                handleDeleteStage(stageItem.id)
                                             }}
                                             className="text-red-500 hover:text-red-700 text-sm px-3 py-1 rounded hover:bg-red-50"
                                         >

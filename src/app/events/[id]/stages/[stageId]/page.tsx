@@ -21,6 +21,7 @@ type Match = {
     overtime_score_a: number | null
     overtime_score_b: number | null
     status: 'pending' | 'completed'
+    next_match_id: string | null
 }
 
 type Stage = {
@@ -178,10 +179,48 @@ export default function StagePage() {
 
         if (error) {
             setError(error.message)
-        } else {
-            await fetchMatches()
-            closeScorePopup()
+            setSavingScore(false)
+            return
         }
+
+        // Advance winner for single elimination
+        if (stage?.format === 'single_elim' && selectedMatch.next_match_id) {
+            // Determine winner
+            let winnerId: string | null = null
+            if (otA !== null && otB !== null) {
+                winnerId = otA > otB ? selectedMatch.participant_a_id : selectedMatch.participant_b_id
+            } else {
+                winnerId = sA > sB ? selectedMatch.participant_a_id : selectedMatch.participant_b_id
+            }
+
+            if (winnerId) {
+                // Find the next match and determine which slot to fill
+                const { data: nextMatch } = await supabase
+                    .from('matches')
+                    .select('*')
+                    .eq('id', selectedMatch.next_match_id)
+                    .single()
+
+                if (nextMatch) {
+                    // Determine slot based on current match position
+                    const currentRoundMatches = matches
+                        .filter(m => m.round === selectedMatch.round)
+                        .sort((a, b) => a.id.localeCompare(b.id))
+                    const matchIndex = currentRoundMatches.findIndex(m => m.id === selectedMatch.id)
+                    const isTopSlot = matchIndex % 2 === 0
+
+                    await supabase
+                        .from('matches')
+                        .update({
+                            [isTopSlot ? 'participant_a_id' : 'participant_b_id']: winnerId
+                        })
+                        .eq('id', selectedMatch.next_match_id)
+                }
+            }
+        }
+
+        await fetchMatches()
+        closeScorePopup()
         setSavingScore(false)
     }
 
@@ -339,8 +378,14 @@ export default function StagePage() {
                                     {roundMatches.map(match => (
                                         <div
                                             key={match.id}
-                                            onClick={() => openScorePopup(match)}
-                                            className="bg-white rounded-lg shadow-sm p-4 flex items-center justify-between hover:shadow-md transition-shadow cursor-pointer"
+                                            onClick={() => {
+                                                if (match.participant_a_id || match.participant_b_id) {
+                                                    openScorePopup(match)
+                                                }
+                                            }}
+                                            className={`bg-white rounded-lg shadow-sm p-4 flex items-center justify-between hover:shadow-md transition-shadow ${
+                                                match.participant_a_id || match.participant_b_id ? 'cursor-pointer' : 'cursor-default opacity-60'
+                                            }`}
                                         >
                                             <div className="flex items-center gap-4 flex-1">
                                                 <span className="font-medium text-gray-900 text-right flex-1">
