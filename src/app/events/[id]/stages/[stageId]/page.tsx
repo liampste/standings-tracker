@@ -379,12 +379,12 @@ export default function StagePage() {
                                         <div
                                             key={match.id}
                                             onClick={() => {
-                                                if (match.participant_a_id || match.participant_b_id) {
+                                                if (match.participant_a_id && match.participant_b_id) {
                                                     openScorePopup(match)
                                                 }
                                             }}
                                             className={`bg-white rounded-lg shadow-sm p-4 flex items-center justify-between hover:shadow-md transition-shadow ${
-                                                match.participant_a_id || match.participant_b_id ? 'cursor-pointer' : 'cursor-default opacity-60'
+                                                match.participant_a_id && match.participant_b_id ? 'cursor-pointer' : 'cursor-default opacity-60'
                                             }`}
                                         >
                                             <div className="flex items-center gap-4 flex-1">

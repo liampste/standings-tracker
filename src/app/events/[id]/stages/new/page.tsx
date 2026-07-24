@@ -174,9 +174,10 @@ export default function NewStagePage() {
 
     const generateSingleElim = async (stageId: string) => {
         const participantIds = form.selectedParticipants
-        const nextPowerOf2 = Math.pow(2, Math.ceil(Math.log2(participantIds.length)))
+        const n = participantIds.length
+        const nextPowerOf2 = Math.pow(2, Math.ceil(Math.log2(n)))
         const numRounds = Math.log2(nextPowerOf2)
-        const numByes = nextPowerOf2 - participantIds.length
+        const numByes = nextPowerOf2 - n
 
         // Sort by seed or randomize
         let sorted = [...participantIds]
@@ -186,8 +187,29 @@ export default function NewStagePage() {
             sorted.sort(() => Math.random() - 0.5)
         }
 
-        // Add byes at the end so top seeds get them
-        const withByes = [...sorted, ...Array(numByes).fill(null)]
+        // Add nulls (byes) at the end — top seeds get byes
+        const withByes: (string | null)[] = [
+            ...sorted,
+            ...Array(numByes).fill(null)
+        ]
+
+        // Build bracket slots using standard seeding pattern
+        // For 8 slots: positions map to [1,8,5,4,3,6,7,2] (seed order)
+        const buildBracketOrder = (size: number): number[] => {
+            if (size === 2) return [1, 2]
+            const prev = buildBracketOrder(size / 2)
+            const result: number[] = []
+            for (const seed of prev) {
+                result.push(seed)
+                result.push(size + 1 - seed)
+            }
+            return result
+        }
+
+        const seedOrder = buildBracketOrder(nextPowerOf2)
+        const bracketSlots: (string | null)[] = seedOrder.map(
+            seed => withByes[seed - 1] ?? null
+        )
 
         // Step 1: Insert ALL placeholder matches for all rounds
         const allMatchInserts = []
@@ -220,74 +242,38 @@ export default function NewStagePage() {
             matchesByRound[match.round].push(match)
         })
 
-        // Step 3: Link next_match_id — each match feeds into the next round
-        // Match i in round R feeds into match floor(i/2) in round R+1
-        for (let round = 1; round < numRounds; round++) {
-        const currentRoundMatches = matchesByRound[round]
-        const nextRoundMatches = matchesByRound[round + 1]
+        // Sort each round's matches consistently
+        Object.keys(matchesByRound).forEach(round => {
+            matchesByRound[Number(round)].sort((a, b) => a.id.localeCompare(b.id))
+        })
 
+        // Step 3: Link next_match_id
         await Promise.all(
-            currentRoundMatches.map((match, index) => {
-                const nextMatch = nextRoundMatches[Math.floor(index / 2)]
-                return supabase
-                    .from('matches')
-                    .update({ next_match_id: nextMatch.id })
-                    .eq('id', match.id)
-                    .then()
-            })
+            Object.keys(matchesByRound)
+                .map(Number)
+                .filter(round => round < numRounds)
+                .flatMap(round =>
+                    matchesByRound[round].map((match, index) => {
+                        const nextMatch = matchesByRound[round + 1][Math.floor(index / 2)]
+                        return supabase
+                            .from('matches')
+                            .update({ next_match_id: nextMatch.id })
+                            .eq('id', match.id)
+                            .then()
+                    })
+                )
         )
-    }
 
         // Step 4: Fill Round 1 participants and handle byes
         const round1Matches = matchesByRound[1]
 
         await Promise.all(
             round1Matches.map(async (match, i) => {
-                const participantA = withByes[i * 2]
-                const participantB = withByes[i * 2 + 1]
+                const participantA = bracketSlots[i * 2]
+                const participantB = bracketSlots[i * 2 + 1]
 
-                if (participantB === null) {
-                    // Participant A gets a bye — auto advance to next round
-                    const nextMatch = matchesByRound[2]?.[Math.floor(i / 2)]
-                    if (nextMatch) {
-                        const isTopSlot = i % 2 === 0
-                        await supabase
-                            .from('matches')
-                            .update({
-                                [isTopSlot ? 'participant_a_id' : 'participant_b_id']: participantA,
-                            })
-                            .eq('id', nextMatch.id)
-                        await supabase
-                            .from('matches')
-                            .update({
-                                participant_a_id: participantA,
-                                participant_b_id: null,
-                                status: 'completed'
-                            })
-                            .eq('id', match.id)
-                    }
-                } else if (participantA === null) {
-                    // Participant B gets a bye — auto advance to next round
-                    const nextMatch = matchesByRound[2]?.[Math.floor(i / 2)]
-                    if (nextMatch) {
-                        const isTopSlot = i % 2 === 0
-                        await supabase
-                            .from('matches')
-                            .update({
-                                [isTopSlot ? 'participant_a_id' : 'participant_b_id']: participantB,
-                            })
-                            .eq('id', nextMatch.id)
-                        await supabase
-                            .from('matches')
-                            .update({
-                                participant_a_id: null,
-                                participant_b_id: participantB,
-                                status: 'completed'
-                            })
-                            .eq('id', match.id)
-                    }
-                } else {
-                    // Normal match — fill both participants
+                if (participantA !== null && participantB !== null) {
+                    // Normal match
                     await supabase
                         .from('matches')
                         .update({
@@ -295,9 +281,50 @@ export default function NewStagePage() {
                             participant_b_id: participantB
                         })
                         .eq('id', match.id)
+                } else if (participantA !== null && participantB === null) {
+                    // Participant A gets a bye
+                    const nextMatch = matchesByRound[2]?.[Math.floor(i / 2)]
+                    const isTopSlot = i % 2 === 0
+                    await supabase
+                        .from('matches')
+                        .update({
+                            participant_a_id: participantA,
+                            participant_b_id: null,
+                            status: 'completed'
+                        })
+                        .eq('id', match.id)
+                    if (nextMatch) {
+                        await supabase
+                            .from('matches')
+                            .update({
+                                [isTopSlot ? 'participant_a_id' : 'participant_b_id']: participantA
+                            })
+                            .eq('id', nextMatch.id)
+                    }
+                } else if (participantA === null && participantB !== null) {
+                    // Participant B gets a bye
+                    const nextMatch = matchesByRound[2]?.[Math.floor(i / 2)]
+                    const isTopSlot = i % 2 === 0
+                    await supabase
+                        .from('matches')
+                        .update({
+                            participant_a_id: null,
+                            participant_b_id: participantB,
+                            status: 'completed'
+                        })
+                        .eq('id', match.id)
+                    if (nextMatch) {
+                        await supabase
+                            .from('matches')
+                            .update({
+                                [isTopSlot ? 'participant_a_id' : 'participant_b_id']: participantB
+                            })
+                            .eq('id', nextMatch.id)
+                    }
                 }
             })
         )
+
         return null
     }
 
