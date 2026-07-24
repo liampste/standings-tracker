@@ -64,6 +64,7 @@ export default function StagePage() {
     const [overtimeScoreA, setOvertimeScoreA] = useState('')
     const [overtimeScoreB, setOvertimeScoreB] = useState('')
     const [savingScore, setSavingScore] = useState(false)
+    const [openLeaderboard, setOpenLeaderboard] = useState<string | null>(null)
     const router = useRouter()
     const params = useParams()
     const eventId = params.id as string
@@ -495,85 +496,70 @@ export default function StagePage() {
                 {/* Stats Tab */}
                 {activeTab === 'stats' && (
                     <div className="grid gap-6">
-                        {/* Points For Leaderboard */}
-                        <div className="bg-white rounded-lg shadow-sm p-5">
-                            <h3 className="font-semibold text-gray-900 mb-4">Most Points Scored</h3>
-                            <div className="grid gap-2">
-                                {[...standings]
-                                    .sort((a, b) => b.pointsFor - a.pointsFor)
-                                    .map((row, index) => (
-                                        <div key={row.participant.id} className="flex items-center gap-3">
-                                            <span className="text-sm text-gray-400 w-6">{index + 1}</span>
-                                            <span className="flex-1 text-sm font-medium text-gray-900">
-                                                {row.participant.name}
-                                            </span>
-                                            <span className="text-sm font-bold text-gray-900">
-                                                {row.pointsFor}
-                                            </span>
-                                        </div>
-                                    ))}
-                            </div>
-                        </div>
+                        {[
+                            {
+                                id: 'pointsFor',
+                                title: 'Most Points Scored',
+                                getValue: (row: StandingRow) => row.pointsFor,
+                                format: (val: number) => val.toString()
+                            },
+                            {
+                                id: 'pointsAgainst',
+                                title: 'Most Points Conceded',
+                                getValue: (row: StandingRow) => row.pointsAgainst,
+                                format: (val: number) => val.toString()
+                            },
+                            {
+                                id: 'goalDifference',
+                                title: 'Best Goal Difference',
+                                getValue: (row: StandingRow) => row.goalDifference,
+                                format: (val: number) => val > 0 ? `+${val}` : val.toString()
+                            },
+                            {
+                                id: 'overtimeWins',
+                                title: 'Most Overtime Wins',
+                                getValue: (row: StandingRow) => row.overtimeWins,
+                                format: (val: number) => val.toString()
+                            },
+                        ].map(stat => {
+                            const sorted = [...standings].sort(
+                                (a, b) => stat.getValue(b) - stat.getValue(a)
+                            )
+                            const top3 = sorted.slice(0, 3)
 
-                        {/* Points Against Leaderboard */}
-                        <div className="bg-white rounded-lg shadow-sm p-5">
-                            <h3 className="font-semibold text-gray-900 mb-4">Most Points Conceded</h3>
-                            <div className="grid gap-2">
-                                {[...standings]
-                                    .sort((a, b) => b.pointsAgainst - a.pointsAgainst)
-                                    .map((row, index) => (
-                                        <div key={row.participant.id} className="flex items-center gap-3">
-                                            <span className="text-sm text-gray-400 w-6">{index + 1}</span>
-                                            <span className="flex-1 text-sm font-medium text-gray-900">
-                                                {row.participant.name}
-                                            </span>
-                                            <span className="text-sm font-bold text-gray-900">
-                                                {row.pointsAgainst}
-                                            </span>
-                                        </div>
-                                    ))}
-                            </div>
-                        </div>
-
-                        {/* Best Goal Difference */}
-                        <div className="bg-white rounded-lg shadow-sm p-5">
-                            <h3 className="font-semibold text-gray-900 mb-4">Best Goal Difference</h3>
-                            <div className="grid gap-2">
-                                {[...standings]
-                                    .sort((a, b) => b.goalDifference - a.goalDifference)
-                                    .map((row, index) => (
-                                        <div key={row.participant.id} className="flex items-center gap-3">
-                                            <span className="text-sm text-gray-400 w-6">{index + 1}</span>
-                                            <span className="flex-1 text-sm font-medium text-gray-900">
-                                                {row.participant.name}
-                                            </span>
-                                            <span className="text-sm font-bold text-gray-900">
-                                                {row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}
-                                            </span>
-                                        </div>
-                                    ))}
-                            </div>
-                        </div>
-
-                        {/* Most Overtime Wins */}
-                        <div className="bg-white rounded-lg shadow-sm p-5">
-                            <h3 className="font-semibold text-gray-900 mb-4">Most Overtime Wins</h3>
-                            <div className="grid gap-2">
-                                {[...standings]
-                                    .sort((a, b) => b.overtimeWins - a.overtimeWins)
-                                    .map((row, index) => (
-                                        <div key={row.participant.id} className="flex items-center gap-3">
-                                            <span className="text-sm text-gray-400 w-6">{index + 1}</span>
-                                            <span className="flex-1 text-sm font-medium text-gray-900">
-                                                {row.participant.name}
-                                            </span>
-                                            <span className="text-sm font-bold text-gray-900">
-                                                {row.overtimeWins}
-                                            </span>
-                                        </div>
-                                    ))}
-                            </div>
-                        </div>
+                            return (
+                                <div key={stat.id} className="bg-white rounded-lg shadow-sm p-5">
+                                    <h3 className="font-semibold text-gray-900 mb-4">{stat.title}</h3>
+                                    <div className="grid gap-2">
+                                        {top3.map((row, index) => (
+                                            <div key={row.participant.id} className="flex items-center gap-3">
+                                                <span className={`text-sm font-bold w-6 ${
+                                                    index === 0 ? 'text-yellow-500' :
+                                                    index === 1 ? 'text-gray-400' :
+                                                    'text-orange-400'
+                                                }`}>
+                                                    {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
+                                                </span>
+                                                <span className="flex-1 text-sm font-medium text-gray-900">
+                                                    {row.participant.name}
+                                                </span>
+                                                <span className="text-sm font-bold text-gray-900">
+                                                    {stat.format(stat.getValue(row))}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {standings.length > 3 && (
+                                        <button
+                                            onClick={() => setOpenLeaderboard(stat.id)}
+                                            className="mt-4 w-full text-sm text-blue-600 hover:text-blue-700 text-center py-1 border-t border-gray-100 pt-3"
+                                        >
+                                            View Full Leaderboard ({standings.length} participants)
+                                        </button>
+                                    )}
+                                </div>
+                            )
+                        })}
 
                         {/* Biggest Win */}
                         <div className="bg-white rounded-lg shadow-sm p-5">
@@ -606,6 +592,82 @@ export default function StagePage() {
                         </div>
                     </div>
                 )}
+            {/* Full Leaderboard Popup */}
+            {openLeaderboard && (() => {
+                const stat = [
+                    {
+                        id: 'pointsFor',
+                        title: 'Most Points Scored',
+                        getValue: (row: StandingRow) => row.pointsFor,
+                        format: (val: number) => val.toString()
+                    },
+                    {
+                        id: 'pointsAgainst',
+                        title: 'Most Points Conceded',
+                        getValue: (row: StandingRow) => row.pointsAgainst,
+                        format: (val: number) => val.toString()
+                    },
+                    {
+                        id: 'goalDifference',
+                        title: 'Best Goal Difference',
+                        getValue: (row: StandingRow) => row.goalDifference,
+                        format: (val: number) => val > 0 ? `+${val}` : val.toString()
+                    },
+                    {
+                        id: 'overtimeWins',
+                        title: 'Most Overtime Wins',
+                        getValue: (row: StandingRow) => row.overtimeWins,
+                        format: (val: number) => val.toString()
+                    },
+                ].find(s => s.id === openLeaderboard)
+
+                if (!stat) return null
+
+                const sorted = [...standings].sort(
+                    (a, b) => stat.getValue(b) - stat.getValue(a)
+                )
+
+                return (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4 max-h-[80vh] flex flex-col">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-lg font-semibold text-gray-900">
+                                    {stat.title}
+                                </h3>
+                                <button
+                                    onClick={() => setOpenLeaderboard(null)}
+                                    className="text-gray-400 hover:text-gray-600 text-xl font-bold"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                            <div className="overflow-y-auto flex-1 grid gap-2">
+                                {sorted.map((row, index) => (
+                                    <div
+                                        key={row.participant.id}
+                                        className={`flex items-center gap-3 p-2 rounded-md ${
+                                            index < 3 ? 'bg-gray-50' : ''
+                                        }`}
+                                    >
+                                        <span className="text-sm w-8 text-center">
+                                            {index === 0 ? '🥇' :
+                                            index === 1 ? '🥈' :
+                                            index === 2 ? '🥉' :
+                                            <span className="text-gray-400">{index + 1}</span>}
+                                        </span>
+                                        <span className="flex-1 text-sm font-medium text-gray-900">
+                                            {row.participant.name}
+                                        </span>
+                                        <span className="text-sm font-bold text-gray-900">
+                                            {stat.format(stat.getValue(row))}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )
+            })()}
             </div>
 
             {/* Score Entry Popup */}
